@@ -1,0 +1,26 @@
+# Sensitive Files
+.env
+*.pem
+*.key
+*.pub
+
+# Archives and Logs
+*.zip
+*.log
+*.sql
+helpers.php.prod
+test_smtp.php
+
+# Local Configuration
+README_SERVER.md
+elektrarent.nginx.conf
+
+# Subdirectory ignores
+/rental-elektronik/.env
+/rental-elektronik/vendor/
+/rental-elektronik/composer.phar
+
+# OS Files
+desktop.ini
+Thumbs.db
+.DS_Store
