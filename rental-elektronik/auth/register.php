@@ -22,20 +22,23 @@ $konfirmasiPassword = $_POST['konfirmasi_password'] ?? '';
 
 $errors = [];
 
-if (empty($namaLengkap)) {
-    $errors[] = 'Nama lengkap wajib diisi.';
+if (empty($namaLengkap) || strlen($namaLengkap) > 150) {
+    $errors[] = 'Nama lengkap wajib diisi (maks 150 karakter).';
 }
-if (empty($email) || !isValidEmail($email)) {
-    $errors[] = 'Email tidak valid.';
+if (empty($email) || !isValidEmail($email) || strlen($email) > 255) {
+    $errors[] = 'Email tidak valid atau terlalu panjang.';
 }
 if (empty($noTelepon) || !isValidPhone($noTelepon)) {
     $errors[] = 'Nomor telepon tidak valid (minimal 10 digit angka).';
 }
-if (empty($alamat)) {
-    $errors[] = 'Alamat wajib diisi.';
+if (empty($alamat) || strlen($alamat) > 5000) {
+    $errors[] = 'Alamat wajib diisi (maks 5000 karakter).';
 }
 if (strlen($password) < 8) {
     $errors[] = 'Password minimal 8 karakter.';
+}
+if (!preg_match('/[A-Za-z]/', $password) || !preg_match('/[0-9]/', $password)) {
+    $errors[] = 'Password harus mengandung huruf dan angka.';
 }
 if ($password !== $konfirmasiPassword) {
     $errors[] = 'Konfirmasi password tidak sama.';

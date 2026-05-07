@@ -26,6 +26,12 @@ if (strtotime($tglSelesai) <= strtotime($tglMulai)) {
     redirect('catalog.php');
 }
 
+// Prevent backdated orders
+if (strtotime($tglMulai) < strtotime('today')) {
+    setFlash('catalog', 'Tanggal mulai tidak boleh di masa lalu.', 'danger');
+    redirect('catalog.php');
+}
+
 // Cek produk & stok
 $stmt = $db->prepare("SELECT p.*, c.slug AS kategori_slug FROM products p JOIN categories c ON p.kategori_id=c.id WHERE p.id=? AND p.status='tersedia' LIMIT 1");
 $stmt->execute([$productId]);
@@ -79,8 +85,11 @@ try {
     setFlash('order', "Pesanan $kodePesanan berhasil dibuat! Total: " . formatRupiah($subtotal), 'success');
     redirect('orders.php');
 
-} catch (Exception $ex) {
-    $db->rollBack();
+} catch (Throwable $ex) {
+    if ($db->inTransaction()) {
+        $db->rollBack();
+    }
+    error_log('Order creation failed: ' . $ex->getMessage());
     setFlash('catalog', 'Gagal membuat pesanan. Silakan coba lagi.', 'danger');
     redirect('catalog.php');
 }

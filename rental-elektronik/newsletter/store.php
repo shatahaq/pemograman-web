@@ -11,14 +11,35 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 requireCsrf();
 
-$email = trim($_POST['email_subscriber'] ?? '');
+$email = strtolower(trim($_POST['email_subscriber'] ?? ''));
 
 if (empty($email) || !isValidEmail($email)) {
     setFlash('newsletter', 'Format email tidak valid.', 'danger');
     redirect(getBasePath() . '/index.php#newsletter');
 }
 
+// Limit email length to prevent abuse
+if (strlen($email) > 255) {
+    setFlash('newsletter', 'Email terlalu panjang.', 'danger');
+    redirect(getBasePath() . '/index.php#newsletter');
+}
+
 $db = getDB();
+
+// Rate limit: max 10 newsletter signups per IP per hour
+$ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+$stmtRate = $db->prepare("
+    SELECT COUNT(*) AS cnt FROM audit_logs
+    WHERE aksi = 'newsletter_subscribe'
+      AND ip_address = ?
+      AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+");
+$stmtRate->execute([$ip]);
+$rateRow = $stmtRate->fetch();
+if (($rateRow['cnt'] ?? 0) >= 10) {
+    setFlash('newsletter', 'Terlalu banyak permintaan. Coba lagi nanti.', 'danger');
+    redirect(getBasePath() . '/index.php#newsletter');
+}
 
 // Cek apakah sudah terdaftar
 $stmt = $db->prepare("SELECT id FROM newsletter_subscribers WHERE email = ? LIMIT 1");

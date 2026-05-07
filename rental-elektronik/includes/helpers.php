@@ -44,12 +44,31 @@ require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validation.php';
 
 /**
- * Redirect ke URL.
+ * Redirect ke URL (aman dari open redirect).
  */
 function redirect(string $url): void
 {
+    // Prevent open redirect — only allow relative or same-origin URLs
+    if (preg_match('#^https?://#i', $url)) {
+        $allowedHost = parse_url(APP_URL, PHP_URL_HOST);
+        $targetHost = parse_url($url, PHP_URL_HOST);
+        if ($allowedHost === null || $targetHost === null || strtolower($allowedHost) !== strtolower($targetHost)) {
+            $url = getBasePath() . '/index.php';
+        }
+    }
     header("Location: $url");
     exit;
+}
+
+/**
+ * Sanitize filename untuk mencegah path traversal.
+ */
+function sanitizeFilename(string $filename): string
+{
+    // Strip directory separators and null bytes
+    $filename = str_replace(['\0', '/', '\\', '..'], '', $filename);
+    $filename = basename($filename);
+    return $filename;
 }
 
 /**

@@ -66,6 +66,8 @@ function loginUser(array $user): void
     $_SESSION['user_email'] = $user['email'];
     $_SESSION['user_role'] = $user['role'];
     $_SESSION['logged_in_at'] = date('Y-m-d H:i:s');
+    // Regenerate CSRF token after login to prevent fixation
+    regenerateCsrfToken();
 }
 
 function logoutUser(): void

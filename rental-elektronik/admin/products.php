@@ -11,6 +11,16 @@ $uploadUrlBase = '../assets/images/products/';
 $allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 $maxFileSize = 5 * 1024 * 1024; // 5MB
 
+// Ensure upload directory exists with security protections
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0755, true);
+}
+// Prevent PHP execution in upload directory
+$htaccessPath = $uploadDir . '.htaccess';
+if (!file_exists($htaccessPath)) {
+    file_put_contents($htaccessPath, "# Security: prevent script execution in upload dir\nphp_flag engine off\nAddHandler default-handler .php .phtml .php3 .php4 .php5 .php7 .phps .pht\n<FilesMatch \"\\.(php|phtml|php3|php4|php5|php7|phps|pht)$\">\n    Require all denied\n</FilesMatch>\n");
+}
+
 /**
  * Handle file upload, return filename atau null.
  */
@@ -25,7 +35,7 @@ function handleImageUpload(string $inputName, ?string $oldImage = null): ?string
     $file = $_FILES[$inputName];
 
     if ($file['error'] !== UPLOAD_ERR_OK) {
-        setFlash('products', 'Gagal upload gambar. Error code: ' . $file['error'], 'danger');
+        setFlash('products', 'Gagal upload gambar. Error code: ' . e((string)$file['error']), 'danger');
         return $oldImage;
     }
 
@@ -37,12 +47,12 @@ function handleImageUpload(string $inputName, ?string $oldImage = null): ?string
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mimeType = $finfo->file($file['tmp_name']);
 
-    if (!in_array($mimeType, $allowedTypes)) {
+    if (!in_array($mimeType, $allowedTypes, true)) {
         setFlash('products', 'Format gambar tidak didukung. Gunakan JPG, PNG, WebP, atau GIF.', 'danger');
         return $oldImage;
     }
 
-    // Generate unique filename
+    // Generate unique filename (no user-controlled parts)
     $ext = match ($mimeType) {
         'image/jpeg' => 'jpg',
         'image/png'  => 'png',
@@ -50,17 +60,36 @@ function handleImageUpload(string $inputName, ?string $oldImage = null): ?string
         'image/gif'  => 'gif',
         default      => 'jpg',
     };
-    $filename = 'product_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $destination = $uploadDir . $filename;
+    $filename = 'product_' . time() . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
+    $destination = $uploadDir . sanitizeFilename($filename);
+
+    // Verify destination is within the upload directory (path traversal protection)
+    $realUploadDir = realpath($uploadDir);
+    if ($realUploadDir === false) {
+        setFlash('products', 'Direktori upload tidak ditemukan.', 'danger');
+        return $oldImage;
+    }
 
     if (!move_uploaded_file($file['tmp_name'], $destination)) {
         setFlash('products', 'Gagal menyimpan gambar ke server.', 'danger');
         return $oldImage;
     }
 
+    // Verify the saved file is actually within the upload directory
+    $realDest = realpath($destination);
+    if ($realDest === false || !str_starts_with($realDest, $realUploadDir)) {
+        @unlink($destination);
+        setFlash('products', 'Path upload tidak valid.', 'danger');
+        return $oldImage;
+    }
+
     // Hapus gambar lama jika ada dan file lokal
-    if ($oldImage && !str_starts_with($oldImage, 'http') && file_exists($uploadDir . $oldImage)) {
-        @unlink($uploadDir . $oldImage);
+    if ($oldImage && !str_starts_with($oldImage, 'http')) {
+        $oldPath = $uploadDir . sanitizeFilename($oldImage);
+        $realOldPath = realpath($oldPath);
+        if ($realOldPath && str_starts_with($realOldPath, $realUploadDir) && file_exists($realOldPath)) {
+            @unlink($realOldPath);
+        }
     }
 
     return $filename;
@@ -108,6 +137,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $harga = (float)($_POST['harga_per_hari'] ?? 0);
         $stok = (int)($_POST['stok'] ?? 0);
         $statusProduk = $_POST['status_produk'] ?? 'tersedia';
+        // Whitelist validation for status
+        if (!in_array($statusProduk, ['tersedia', 'habis', 'maintenance'], true)) {
+            $statusProduk = 'tersedia';
+        }
 
         // Ambil gambar lama
         $stmtOld = $db->prepare("SELECT image_url FROM products WHERE id=?");
@@ -134,8 +167,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtImg = $db->prepare("SELECT image_url FROM products WHERE id=?");
             $stmtImg->execute([$id]);
             $img = $stmtImg->fetchColumn();
-            if ($img && !str_starts_with($img, 'http') && file_exists($uploadDir . $img)) {
-                @unlink($uploadDir . $img);
+            if ($img && !str_starts_with($img, 'http')) {
+                $delPath = $uploadDir . sanitizeFilename($img);
+                $realDel = realpath($delPath);
+                $realBase = realpath($uploadDir);
+                if ($realDel && $realBase && str_starts_with($realDel, $realBase) && file_exists($realDel)) {
+                    @unlink($realDel);
+                }
             }
             $db->prepare("DELETE FROM products WHERE id=?")->execute([$id]);
             auditLog('delete_product', 'products', $id);
@@ -193,7 +231,7 @@ $flash = getFlash('products');
       <td><?=e((string)$p['stok'])?></td>
       <td><span class="status-badge <?=statusBadgeClass($p['status'])?>"><?=statusLabel($p['status'])?></span></td>
       <td class="flex gap-2">
-        <button type="button" class="btn-ghost px-2 text-xs" onclick='openEditModal(<?=json_encode($p)?>)'>Edit</button>
+        <button type="button" class="btn-ghost px-2 text-xs" onclick='openEditModal(<?=htmlspecialchars(json_encode($p, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8')?>)'>Edit</button>
         <form method="POST" onsubmit="return confirm('Hapus produk ini?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="product_id" value="<?=$p['id']?>"><?=csrfField()?><button type="submit" class="btn-ghost px-2 text-xs text-red-600">Hapus</button></form>
       </td>
     </tr><?php endforeach;?></tbody></table></div></div>

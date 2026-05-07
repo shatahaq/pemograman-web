@@ -50,3 +50,11 @@ function requireCsrf(): void
         die('CSRF token tidak valid. Silakan muat ulang halaman dan coba lagi.');
     }
 }
+
+/**
+ * Regenerate CSRF token (gunakan setelah operasi sensitif).
+ */
+function regenerateCsrfToken(): void
+{
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
